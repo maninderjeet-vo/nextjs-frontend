@@ -1,30 +1,38 @@
-# Stage 1: Build Stage
-FROM node:20-bullseye-slim AS builder
+FROM node:20-alpine AS base
 
-# Set the working directory
+# Stage 1: Install dependencies
+FROM base AS deps
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
-
-# Copy package files first to leverage Docker's layer caching
 COPY package*.json ./
-
-# Install all dependencies (including dev dependencies for building)
 RUN npm install
 
-# Copy the rest of the application source code
+# Stage 2: Build the app
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Build the application (adjust if your command is different, e.g., 'npm run build:prod')
+# Next.js telemetry can be disabled to speed up build
+ENV NEXT_TELEMETRY_DISABLED 1
 RUN npm run build
 
-# Stage 2: Production Stage (Serving with Nginx)
-FROM nginx:stable-alpine
+# Stage 3: Production runner
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED 1
 
-# Copy the built files from the 'builder' stage to Nginx's default public folder
-# Note: 'dist' is the common folder name; change to 'build' if using Create React App
-COPY --from=builder /app/dist /usr/share/nginx/html
+# Create a non-root user for security
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-# Expose port 80
-EXPOSE 80
+# Copy only the necessary files from builder
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Start Nginx
-CMD ["nginx", "-g", "daemon off;"]
+USER nextjs
+EXPOSE 3000
+ENV PORT 3000
+
+CMD ["node", "server.js"]
