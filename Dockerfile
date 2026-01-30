@@ -1,34 +1,23 @@
-FROM node:20-alpine AS base
+cat Dockerfile 
+# Use an official Node.js runtime as a parent image (choose a specific LTS version for stability)
+FROM node:20-alpine
 
-# Stage 1: Install dependencies
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
-WORKDIR /app
+# Set the working directory in the container
+WORKDIR /usr/src/app
+
+# Copy package.json and package-lock.json (or npm-shrinkwrap.json)
+# separately to leverage Docker cache layers
 COPY package*.json ./
+
+# Install dependencies (including devDependencies for development)
 RUN npm install
 
-# Stage 2: Build the app
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+# Copy the rest of your application's source code to the container
 COPY . .
-# Next.js telemetry can be disabled to speed up build
-ENV NEXT_TELEMETRY_DISABLED 1
-RUN npm run build
 
-
-
-# Create a non-root user for security
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Copy only the necessary files from builder
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
+# Expose the port your app runs on (e.g., 3000, 5173, etc. - check your package.json script)
 EXPOSE 3000
-ENV PORT 3000
 
-CMD ["node", "server.js"]
+# Define the command to run your app in development mode
+# This assumes you have a "dev" script in your package.json (e.g., "dev": "nodemon index.js")
+CMD [ "npm", "run", "dev" ]
